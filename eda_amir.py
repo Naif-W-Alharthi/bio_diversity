@@ -2,6 +2,8 @@ import pandas as pd
 import os
 import scipy.stats as stats
 import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 # # This code is done using a different methodology compared to my teammate Naif, where  he tries to have an automated
 # # code for all the files, I have instead gone through each file individually.
@@ -132,35 +134,55 @@ df6 = pd.read_csv(os.path.join("Clean Biodiversity", '2_Clean Tree Cover Loss.cs
 df7 = pd.read_csv(os.path.join("Clean Biodiversity", '2_Clean wheat-yields.csv'))
 df_list = [df1, df2, df3, df4, df5, df6, df7]
 
-# # Statistics
+# # Statistics/Viz
+
+
+# print(df.describe())
+# print(df.shape)
+# print(df[col].unique())
+# print(df.value_counts(subset = df[col]))
 i = 0
 for df in df_list:
-    # print(df.describe())
-    # print(df.shape)
     for col in df.columns:
         if df[col].dtype in ['int64', 'float64'] and not col in ["Year", "Upper CI", "Lower CI"]:
-            # print(df[col].unique())
-            # print(df.value_counts(subset = df[col]))
+            plt.figure(figsize=(10, 5))
+            ax = sns.histplot(data=df, x=df[col])
+            ax.set_xlabel(col, fontsize=15)
+            ax.set_ylabel('Count of records', fontsize=15)
+            ax.set_title(f'Univariate analysis of {df_names[i]}', fontsize=20)
 
-            # Sample size
+            plt.figure(figsize=(10, 5))
+            ax = sns.boxplot(data=df, x=df[col])
+            ax.set_title(f'Boxplot analysis of {df_names[i]}', fontsize=20)
+
+
+            i += 1
+
+i = 0
+for df in df_list:
+    for col in df.columns:
+        if df[col].dtype in ['int64', 'float64'] and not col in ["Year", "Upper CI", "Lower CI"]:
+
+            # Sample size/mean/standard deviations
             n = len(df[col])
-
-            # Sample mean and standard deviation
             sample_mean = np.mean(df[col])
-            sample_std = np.std(df[col], ddof=1)  # Use ddof=1 for sample standard deviation
+            sample_std = np.std(df[col], ddof=1)
+            # Delta Degrees of Freedom = 1 for sample standard deviation
 
-            # Confidence level (e.g., 95% confidence level)
             confidence_level = 0.95
+            # Confidence level (we will use a confidence level of 95% as not only is that one of the recommended/
+            # standard levels used when calculating error margins, it is also the level used to determine the error
+            # margins in of our files already (namely "global-living-planet-index").
 
-            # Calculate the critical value (z-score for large sample sizes)
             critical_value = stats.norm.ppf((1 + confidence_level) / 2)  # Two-tailed test
+            # Calculating the critical value (z-score for large sample sizes)
 
-            # Calculate the margin of error
             margin_of_error = critical_value * (sample_std / np.sqrt(n))
+            # Calculating the margin of error
 
             margin_of_error_percentage = (margin_of_error / sample_mean) * 100
 
-            print(f"Margin of Error for Metric {df_names[i]}: ", margin_of_error_percentage.round(2))
+            print(f"Margin of Error for Metric {df_names[i]}: {margin_of_error_percentage.round(2)} %")
             i += 1
 
 print("")
