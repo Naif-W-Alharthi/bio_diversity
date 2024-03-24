@@ -134,35 +134,181 @@ df6 = pd.read_csv(os.path.join("Clean Biodiversity", '2_Clean Tree Cover Loss.cs
 df7 = pd.read_csv(os.path.join("Clean Biodiversity", '2_Clean wheat-yields.csv'))
 df_list = [df1, df2, df3, df4, df5, df6, df7]
 
+
 # # Statistics/Viz
+
+
+def remove_outlier(df_original, column_name, output_name):
+    nrow1 = df_original.shape[0]
+    df_original = df_original[df_original[column_name] > 0]
+    # Calculate the first and third quartiles
+    Q1 = df_original[column_name].quantile(0.25)
+    Q3 = df_original[column_name].quantile(0.75)
+    # Calculate the interquartile range (IQR)
+    IQR = Q3 - Q1
+    # Define the lower and upper bounds for outlier detection
+    lower_bound = Q1 - 1.5 * IQR
+    upper_bound = Q3 + 1.5 * IQR
+    # Identify outliers
+    outliers = df_original[(df_original[column_name] < lower_bound) | (df_original[column_name] > upper_bound)]
+    # Remove outliers from df22
+    df_original = df_original[~((df_original[column_name] < lower_bound) | (df_original[column_name] > upper_bound))]
+    df_original.to_csv(os.path.join("Clean Biodiversity", output_name), index=False)
+    print(output_name, " ", nrow1 - df_original.shape[0], " rows were removed.")
+    return df_original
+
+
+def plot_data(df_original, df_name):
+    for column in df_original.columns:
+        if df_original[column].dtype in ['int64', 'float64'] and column not in ["Year", "Upper CI", "Lower CI"]:
+            plt.figure(figsize=(15, 5))
+            plt.subplot(1, 2, 1)
+            ax1 = sns.histplot(data=df_original, x=df_original[column])
+            ax1.set_xlabel(column, fontsize=15)
+            ax1.set_ylabel('Count of records', fontsize=15)
+            ax1.set_title(f'Univariate analysis of {df_name}', fontsize=20)
+            plt.subplot(1, 2, 2)
+            ax2 = sns.boxplot(data=df_original, x=df_original[column])
+            ax2.set_title(f'Boxplot analysis of {df_name}', fontsize=20)
+            plt.tight_layout()
+            plt.savefig(os.path.join("Clean Biodiversity", df_name + ".png"))
+
+
+def join_all_df(Dfs, col_names):
+    merged_df = Dfs[0][["Country Name", "Year"]]
+    for ind, Df in enumerate(Dfs):
+        df_merge = Df[["Country Name", "Year", col_names[ind]]]
+        merged_df = pd.merge(merged_df, df_merge, on=["Country Name", "Year"], how='outer')
+    col_names = ["Country Name", "Year"] + col_names
+    merged_df.columns = col_names
+    return merged_df
+
+
+# ## deforestation-co2-trade-by-product.csv
+df1 = remove_outlier(df1, "Agricultural land (% of land area)", "3_Outlier Agricultural Land.csv")
+df2 = remove_outlier(df2, "CO2 (in Tonnes)", "3_Outlier deforestation-co2-trade-by-product.csv")
+df3 = remove_outlier(df3, "Forest area (% of land area)", "3_Outlier Forest Area.csv")
+df4 = remove_outlier(df4, "GHG emissions per kilogram (Poore & Nemecek, 2018)",
+                     "3_Outlier GHG emissions per kilogram produced.csv")
+df5 = remove_outlier(df5, "Living Planet Index", "3_Outlier global-living-planet-index.csv")
+df6 = remove_outlier(df6, "Tree Cover Loss (hectares)", "3_Outlier Tree Cover Loss.csv")
+df7 = remove_outlier(df7, "Wheat Yield (tonnes/km2)", "3_Outlier wheat-yields.csv")
+
+plot_data(df1, "Agricultural Land")
+plot_data(df2, "Deforestation CO2 Trade by Product")
+plot_data(df3, "Forest Area")
+plot_data(df4, "GHG Emissions per Kilogram Produced")
+plot_data(df5, "Global Living Planet Index")
+plot_data(df6, "Tree Cover Loss")
+plot_data(df7, "Wheat Yields")
+
+filtered_df = join_all_df([df1, df3, df6, df7], ["Agricultural land (% of land area)",
+                                             "Forest area (% of land area)",
+                                             "Tree Cover Loss (hectares)",
+                                             "Wheat Yield (tonnes/km2)"])
+filtered_df = filtered_df.dropna(how='any')
+filtered_df.to_csv(os.path.join("Clean Biodiversity", 'Merged_data.csv'), index=False)
+
+grouped = filtered_df.groupby(["Country Name"])
+
+# for country, group_df in grouped:
+#     plt.figure(figsize=(12, 6))
+#     for i, col in enumerate(group_df.columns[2:], start=1):
+#         plt.subplot(1, len(group_df.columns[2:]), i)
+#         sns.lineplot(x='Year', y=col, data=group_df)
+#         plt.title(col)
+#         plt.xlabel('Year')
+#         plt.ylabel('Value')
+#         plt.grid(True)
+#     plt.suptitle(f'Changes over time for {country}')
+#     plt.tight_layout()
+#     plt.savefig(os.path.join("Clean Biodiversity", "Change_Over_Time", f'Changes over time for {country}.png'))
+
+
+# Biodiversity Score
+biodiversity_cols = ["Agricultural land (% of land area)",
+                     "Forest area (% of land area)",
+                     "Tree Cover Loss (hectares)",
+                     "Wheat Yield (tonnes/km2)"]
+
+# Normalize the columns (optional but can be useful for combining different scales)
+normalized_df = filtered_df[biodiversity_cols].apply(lambda x: (x - x.min()) / (x.max() - x.min()))
+# Calculate the average biodiversity score
+normalized_df['Biodiversity Score'] = normalized_df.mean(axis=1)
+# Merge the biodiversity score with the original DataFrame
+result_df = pd.concat([filtered_df, normalized_df['Biodiversity Score']], axis=1)
+
+
+# Coefficients
+from sklearn.linear_model import LinearRegression
+import statsmodels.api as sm
+
+
+X = result_df[biodiversity_cols]
+X = sm.add_constant(X)
+Y = result_df['Biodiversity Score']
+
+lmvr = sm.OLS(Y, X)  # X.astype(float))
+lmvr_res = lmvr.fit()
+print(lmvr_res.summary())
+
+# Fit linear regression model
+model = LinearRegression()
+model.fit(X, Y)
+
+# Get coefficients
+coefficients = model.coef_
+
+# Display coefficients for each column
+for i, col in enumerate(biodiversity_cols):
+    print(f"Coefficient for {col}: {coefficients[i]}")
+
+
+pred_ols = lmvr_res.get_prediction()
+iv_l = pred_ols.summary_frame()["obs_ci_lower"]
+iv_u = pred_ols.summary_frame()["obs_ci_upper"]
+
+num_cols = X.shape[1]
+fig, axes = plt.subplots(num_cols, 1, figsize=(8, 6*num_cols))
+for i in range(num_cols):
+    axes[i].plot(X[:, i], Y, "o", label="Actual Biodiversity Score")
+    axes[i].plot(X[:, i], lmvr_res.fittedvalues, "r--.", label="Fitted Values")
+    axes[i].plot(X[:, i], iv_u, "g--", label="Upper Bound")
+    axes[i].plot(X[:, i], iv_l, "b--", label="Lower Bound")
+    axes[i].set_xlabel(f"X{i+1}")
+    axes[i].set_ylabel("Y Label")
+    axes[i].legend(loc="best")
+
+plt.tight_layout()
+plt.savefig(os.path.join("Clean Biodiversity", 'Regression Results.png'))
+
+
 
 
 # print(df.describe())
 # print(df.shape)
 # print(df[col].unique())
 # print(df.value_counts(subset = df[col]))
+# i = 0
+# for df in df_list:
+#     for col in df.columns:
+#         if df[col].dtype in ['int64', 'float64'] and not col in ["Year", "Upper CI", "Lower CI"]:
+#             plt.figure(figsize=(10, 5))
+#             ax = sns.histplot(data=df, x=df[col])
+#             ax.set_xlabel(col, fontsize=15)
+#             ax.set_ylabel('Count of records', fontsize=15)
+#             ax.set_title(f'Univariate analysis of {df_names[i]}', fontsize=20)
+#
+#             plt.figure(figsize=(10, 5))
+#             ax = sns.boxplot(data=df, x=df[col])
+#             ax.set_title(f'Boxplot analysis of {df_names[i]}', fontsize=20)
+#
+#             i += 1
+
 i = 0
 for df in df_list:
     for col in df.columns:
         if df[col].dtype in ['int64', 'float64'] and not col in ["Year", "Upper CI", "Lower CI"]:
-            plt.figure(figsize=(10, 5))
-            ax = sns.histplot(data=df, x=df[col])
-            ax.set_xlabel(col, fontsize=15)
-            ax.set_ylabel('Count of records', fontsize=15)
-            ax.set_title(f'Univariate analysis of {df_names[i]}', fontsize=20)
-
-            plt.figure(figsize=(10, 5))
-            ax = sns.boxplot(data=df, x=df[col])
-            ax.set_title(f'Boxplot analysis of {df_names[i]}', fontsize=20)
-
-
-            i += 1
-
-i = 0
-for df in df_list:
-    for col in df.columns:
-        if df[col].dtype in ['int64', 'float64'] and not col in ["Year", "Upper CI", "Lower CI"]:
-
             # Sample size/mean/standard deviations
             n = len(df[col])
             sample_mean = np.mean(df[col])
