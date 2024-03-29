@@ -4,6 +4,9 @@ import scipy.stats as stats
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
+from sklearn.linear_model import LinearRegression
+import statsmodels.api as sm
+from sklearn.preprocessing import StandardScaler
 
 # # This code is done using a different methodology compared to my teammate Naif, where  he tries to have an automated
 # # code for all the files, I have instead gone through each file individually.
@@ -42,7 +45,7 @@ df3.drop(["Country Code", "Series Name", "Series Code"], axis=1, inplace=True)
 # "Series Code" repeat the same values over and over again. Plus by transforming these columns from Wide Format into
 # Long Format, they are also made redundant.
 
-df1 = df1.iloc[:-51]
+df3 = df3.iloc[:-51]
 # The last 5 rows did not contain data, but instead where the data came from and other rows did not represent countries,
 # but instead represent groups of counties joined by different criteria.
 
@@ -74,7 +77,7 @@ df6.drop(["Country Code", "Series Name", "Series Code"], axis=1, inplace=True)
 # "Series Code" repeat the same values over and over again. Plus by transforming these columns from Wide Format into
 # Long Format, they are also made redundant.
 
-df1 = df1.iloc[:-51]
+df6 = df6.iloc[:-51]
 # The last 5 rows did not contain data, but instead where the data came from and other rows did not represent countries,
 # but instead represent groups of counties joined by different criteria.
 
@@ -95,6 +98,9 @@ df7.drop(["Code"], axis=1, inplace=True)
 df7.rename(columns={"Entity": "Country Name", 'Wheat yield': 'Wheat Yield (tonnes/km2)'}, inplace=True)
 # renaming the columns in order to uniformize it with the rest of the files
 
+print("")
+
+df8 = pd.read_csv('Biodiversity/' + "RED_LIST_28032024135604276.csv", header=0)
 
 df_list = [df1, df2, df3, df4, df5, df6, df7]
 df_names = ['2_Clean Agricultural Land.csv',
@@ -103,7 +109,8 @@ df_names = ['2_Clean Agricultural Land.csv',
             '2_Clean GHG emissions per kilogram produced.csv',
             '2_Clean global-living-planet-index.csv',
             '2_Clean Tree Cover Loss.csv',
-            '2_Clean wheat-yields.csv']
+            '2_Clean wheat-yields.csv',
+            '2_Clean Red List.csv']
 if not os.path.exists("Clean Biodiversity"):
     os.makedirs("Clean Biodiversity")
 
@@ -141,17 +148,12 @@ df_list = [df1, df2, df3, df4, df5, df6, df7]
 def remove_outlier(df_original, column_name, output_name):
     nrow1 = df_original.shape[0]
     df_original = df_original[df_original[column_name] > 0]
-    # Calculate the first and third quartiles
     Q1 = df_original[column_name].quantile(0.25)
     Q3 = df_original[column_name].quantile(0.75)
-    # Calculate the interquartile range (IQR)
     IQR = Q3 - Q1
-    # Define the lower and upper bounds for outlier detection
     lower_bound = Q1 - 1.5 * IQR
     upper_bound = Q3 + 1.5 * IQR
-    # Identify outliers
     outliers = df_original[(df_original[column_name] < lower_bound) | (df_original[column_name] > upper_bound)]
-    # Remove outliers from df22
     df_original = df_original[~((df_original[column_name] < lower_bound) | (df_original[column_name] > upper_bound))]
     df_original.to_csv(os.path.join("Clean Biodiversity", output_name), index=False)
     print(output_name, " ", nrow1 - df_original.shape[0], " rows were removed.")
@@ -194,22 +196,52 @@ df5 = remove_outlier(df5, "Living Planet Index", "3_Outlier global-living-planet
 df6 = remove_outlier(df6, "Tree Cover Loss (hectares)", "3_Outlier Tree Cover Loss.csv")
 df7 = remove_outlier(df7, "Wheat Yield (tonnes/km2)", "3_Outlier wheat-yields.csv")
 
-plot_data(df1, "Agricultural Land")
-plot_data(df2, "Deforestation CO2 Trade by Product")
-plot_data(df3, "Forest Area")
-plot_data(df4, "GHG Emissions per Kilogram Produced")
-plot_data(df5, "Global Living Planet Index")
-plot_data(df6, "Tree Cover Loss")
-plot_data(df7, "Wheat Yields")
+i = 0
+df_list = [df1, df2, df3, df4, df5, df6, df7]
+for df in df_list:
+    for col in df.columns:
+        if df[col].dtype in ['int64', 'float64'] and not col in ["Year", "Upper CI", "Lower CI"]:
+            # Sample size/mean/standard deviations
+            n = len(df[col])
+            sample_mean = np.mean(df[col])
+            sample_std = np.std(df[col], ddof=1)
+            # Delta Degrees of Freedom = 1 for sample standard deviation
+
+            confidence_level = 0.95
+            # Confidence level (we will use a confidence level of 95% as not only is that one of the recommended/
+            # standard levels used when calculating error margins, it is also the level used to determine the error
+            # margins in of our files already (namely "global-living-planet-index").
+
+            critical_value = stats.norm.ppf((1 + confidence_level) / 2)  # Two-tailed test
+            # Calculating the critical value (z-score for large sample sizes)
+
+            margin_of_error = critical_value * (sample_std / np.sqrt(n))
+            # Calculating the margin of error
+            print(f"Margin of Error for Metric {df_names[i]}: {sample_mean.round(2)} +- {margin_of_error.round(3)} ")
+            margin_of_error_percentage = (margin_of_error / sample_mean) * 100
+
+            print(f"Margin of Error for Metric {df_names[i]}: {margin_of_error_percentage.round(2)} %")
+            i += 1
+
+print("")
+
+# plot_data(df1, "Agricultural Land")
+# plot_data(df2, "Deforestation CO2 Trade by Product")
+# plot_data(df3, "Forest Area")
+# plot_data(df4, "GHG Emissions per Kilogram Produced")
+# plot_data(df5, "Global Living Planet Index")
+# plot_data(df6, "Tree Cover Loss")
+# plot_data(df7, "Wheat Yields")
 
 filtered_df = join_all_df([df1, df3, df6, df7], ["Agricultural land (% of land area)",
-                                             "Forest area (% of land area)",
-                                             "Tree Cover Loss (hectares)",
-                                             "Wheat Yield (tonnes/km2)"])
-filtered_df = filtered_df.dropna(how='any')
+                                                 "Forest area (% of land area)",
+                                                 "Tree Cover Loss (hectares)",
+                                                 "Wheat Yield (tonnes/km2)"])
+
+# filtered_df = filtered_df.dropna(how='any')
 filtered_df.to_csv(os.path.join("Clean Biodiversity", 'Merged_data.csv'), index=False)
 
-grouped = filtered_df.groupby(["Country Name"])
+# grouped = filtered_df.groupby(["Country Name"])
 
 # for country, group_df in grouped:
 #     plt.figure(figsize=(12, 6))
@@ -228,62 +260,124 @@ grouped = filtered_df.groupby(["Country Name"])
 # Biodiversity Score
 biodiversity_cols = ["Agricultural land (% of land area)",
                      "Forest area (% of land area)",
-                     "Tree Cover Loss (hectares)",
                      "Wheat Yield (tonnes/km2)"]
 
-# Normalize the columns (optional but can be useful for combining different scales)
-normalized_df = filtered_df[biodiversity_cols].apply(lambda x: (x - x.min()) / (x.max() - x.min()))
-# Calculate the average biodiversity score
-normalized_df['Biodiversity Score'] = normalized_df.mean(axis=1)
-# Merge the biodiversity score with the original DataFrame
-result_df = pd.concat([filtered_df, normalized_df['Biodiversity Score']], axis=1)
+# ########### New regression ############# #
+result_df = filtered_df.groupby('Year').agg({'Agricultural land (% of land area)': lambda x: x.mean(skipna=True),
+                                             'Forest area (% of land area)': lambda x: x.mean(skipna=True),
+                                             'Wheat Yield (tonnes/km2)': lambda x: x.mean(skipna=True)
+                                             })
 
+result_df = pd.merge(result_df, df5[df5['Country Name'] == 'World'][['Year', 'Living Planet Index']],
+                     on='Year', how='left')
 
-# Coefficients
-from sklearn.linear_model import LinearRegression
-import statsmodels.api as sm
+result_df = result_df.dropna()
+# result_df = result_df[(result_df['Year'] >= 2002) & (result_df['Year'] <= 2018)]
 
+result_df.to_csv(os.path.join("Clean Biodiversity", 'Regression_data.csv'), index=False)
+
+# Select the specified columns
+selected_columns = ["Agricultural land (% of land area)",
+                    "Forest area (% of land area)",
+                    "Wheat Yield (tonnes/km2)",
+                    "Living Planet Index"]
+
+# Create a DataFrame containing only the selected columns
+selected_df = result_df[selected_columns]
+
+# Calculate the correlation matrix
+correlation_matrix = selected_df.corr()
+
+# Plot the correlation matrix as a heatmap
+plt.figure(figsize=(8, 6))
+sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt=".2f")
+plt.title('Correlation Plot')
+plt.show()
+plt.savefig(os.path.join("Clean Biodiversity", 'Correlation Plot.png'))
 
 X = result_df[biodiversity_cols]
 X = sm.add_constant(X)
-Y = result_df['Biodiversity Score']
+Y = result_df['Living Planet Index']
 
 lmvr = sm.OLS(Y, X)  # X.astype(float))
 lmvr_res = lmvr.fit()
 print(lmvr_res.summary())
 
-# Fit linear regression model
-model = LinearRegression()
-model.fit(X, Y)
+# Assuming df is your DataFrame containing the relevant columns
 
-# Get coefficients
-coefficients = model.coef_
+# Step 1: Normalize the feature columns
+scaler = StandardScaler()
+normalized_features = scaler.fit_transform(result_df[["Agricultural land (% of land area)",
+                                                      "Forest area (% of land area)",
+                                                      # "Tree Cover Loss (hectares)",
+                                                      "Wheat Yield (tonnes/km2)"]])
 
-# Display coefficients for each column
-for i, col in enumerate(biodiversity_cols):
-    print(f"Coefficient for {col}: {coefficients[i]}")
+# Step 2: Prepare the feature matrix (X) and target vector (y)
+X = pd.DataFrame(normalized_features, columns=["Agricultural land (% of land area)",
+                                               "Forest area (% of land area)",
+                                               # "Tree Cover Loss (hectares)",
+                                               "Wheat Yield (tonnes/km2)"])
+Y = result_df['Living Planet Index']
+X.reset_index(drop=True, inplace=True)
+Y.reset_index(drop=True, inplace=True)
+# Add constant to the features for intercept term
+X = sm.add_constant(X)
 
+# Step 3: Fit the OLS regression model
+model = sm.OLS(Y, X).fit()
 
-pred_ols = lmvr_res.get_prediction()
-iv_l = pred_ols.summary_frame()["obs_ci_lower"]
-iv_u = pred_ols.summary_frame()["obs_ci_upper"]
+# Step 4: Interpret the results
+print(model.summary())
 
-num_cols = X.shape[1]
-fig, axes = plt.subplots(num_cols, 1, figsize=(8, 6*num_cols))
-for i in range(num_cols):
-    axes[i].plot(X[:, i], Y, "o", label="Actual Biodiversity Score")
-    axes[i].plot(X[:, i], lmvr_res.fittedvalues, "r--.", label="Fitted Values")
-    axes[i].plot(X[:, i], iv_u, "g--", label="Upper Bound")
-    axes[i].plot(X[:, i], iv_l, "b--", label="Lower Bound")
-    axes[i].set_xlabel(f"X{i+1}")
-    axes[i].set_ylabel("Y Label")
-    axes[i].legend(loc="best")
-
-plt.tight_layout()
-plt.savefig(os.path.join("Clean Biodiversity", 'Regression Results.png'))
+# ########### New regression ############# #
 
 
+# # Normalize the columns (useful for combining different scales)
+# normalized_df = filtered_df[biodiversity_cols].apply(lambda x: (x - x.min()) / (x.max() - x.min()))
+# # Calculate the average biodiversity score
+# normalized_df['Biodiversity Score'] = normalized_df.mean(axis=1)
+# # Merge the biodiversity score with the original DataFrame
+# result_df = pd.concat([filtered_df, normalized_df['Biodiversity Score']], axis=1)
 
+# Coefficients
+
+
+# X = result_df[biodiversity_cols]
+# X = sm.add_constant(X)
+# Y = result_df['Biodiversity Score']
+#
+# lmvr = sm.OLS(Y, X)  # X.astype(float))
+# lmvr_res = lmvr.fit()
+# print(lmvr_res.summary())
+#
+# # Fit linear regression model
+# model = LinearRegression()
+# model.fit(X, Y)
+#
+# # Get coefficients
+# coefficients = model.coef_
+#
+# # Display coefficients for each column
+# for i, col in enumerate(biodiversity_cols):
+#     print(f"Coefficient for {col}: {coefficients[i]}")
+#
+# pred_ols = lmvr_res.get_prediction()
+# iv_l = pred_ols.summary_frame()["obs_ci_lower"]
+# iv_u = pred_ols.summary_frame()["obs_ci_upper"]
+#
+# num_cols = X.shape[1]
+# fig, axes = plt.subplots(num_cols, 1, figsize=(8, 6 * num_cols))
+# for i in range(num_cols):
+#     axes[i].plot(X[:, i], Y, "o", label="Actual Biodiversity Score")
+#     axes[i].plot(X[:, i], lmvr_res.fittedvalues, "r--.", label="Fitted Values")
+#     axes[i].plot(X[:, i], iv_u, "g--", label="Upper Bound")
+#     axes[i].plot(X[:, i], iv_l, "b--", label="Lower Bound")
+#     axes[i].set_xlabel(f"X{i + 1}")
+#     axes[i].set_ylabel("Y Label")
+#     axes[i].legend(loc="best")
+#
+# plt.tight_layout()
+# plt.savefig(os.path.join("Clean Biodiversity", 'Regression Results.png'))
 
 # print(df.describe())
 # print(df.shape)
@@ -304,31 +398,3 @@ plt.savefig(os.path.join("Clean Biodiversity", 'Regression Results.png'))
 #             ax.set_title(f'Boxplot analysis of {df_names[i]}', fontsize=20)
 #
 #             i += 1
-
-i = 0
-for df in df_list:
-    for col in df.columns:
-        if df[col].dtype in ['int64', 'float64'] and not col in ["Year", "Upper CI", "Lower CI"]:
-            # Sample size/mean/standard deviations
-            n = len(df[col])
-            sample_mean = np.mean(df[col])
-            sample_std = np.std(df[col], ddof=1)
-            # Delta Degrees of Freedom = 1 for sample standard deviation
-
-            confidence_level = 0.95
-            # Confidence level (we will use a confidence level of 95% as not only is that one of the recommended/
-            # standard levels used when calculating error margins, it is also the level used to determine the error
-            # margins in of our files already (namely "global-living-planet-index").
-
-            critical_value = stats.norm.ppf((1 + confidence_level) / 2)  # Two-tailed test
-            # Calculating the critical value (z-score for large sample sizes)
-
-            margin_of_error = critical_value * (sample_std / np.sqrt(n))
-            # Calculating the margin of error
-
-            margin_of_error_percentage = (margin_of_error / sample_mean) * 100
-
-            print(f"Margin of Error for Metric {df_names[i]}: {margin_of_error_percentage.round(2)} %")
-            i += 1
-
-print("")
