@@ -100,7 +100,6 @@ df7.rename(columns={"Entity": "Country Name", 'Wheat yield': 'Wheat Yield (tonne
 
 print("")
 
-df8 = pd.read_csv('Biodiversity/' + "RED_LIST_28032024135604276.csv", header=0)
 
 df_list = [df1, df2, df3, df4, df5, df6, df7]
 df_names = ['2_Clean Agricultural Land.csv',
